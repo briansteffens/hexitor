@@ -39,8 +39,8 @@ typedef struct
 
 void destroy_pane(pane* pane)
 {
-    wborder(pane->window, ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ');
-    wrefresh(pane->window);
+    //wborder(pane->window, ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ');
+    //wrefresh(pane->window);
     delwin(pane->window);
 }
 
@@ -52,8 +52,8 @@ void setup_pane(pane* pane)
     }
 
     pane->window = newwin(pane->height, pane->width, pane->top, pane->left);
-    box(pane->window, 0, 0);
-    wrefresh(pane->window);
+    //box(pane->window, 0, 0);
+    //wrefresh(pane->window);
 }
 
 #define SOURCE_LEN 256
@@ -69,6 +69,13 @@ typedef struct
 
     int cursor_byte;
     int cursor_nibble;
+
+    int hex_width;
+    int hex_height;
+
+    int grouping;
+
+    int scroll_start;
 } state;
 
 char nibble_to_hex(unsigned char nibble)
@@ -121,7 +128,41 @@ void render_details(state* state, pane* pane)
     mvwprintw(pane->window, 9, 1, "UInt64: %ld", *(uint64_t*)cursor_start);
 
     box(pane->window, 0, 0);
-    wrefresh(pane->window);
+}
+
+int bytes_per_line(state* state)
+{
+    return state->hex_width / (state->grouping * 2 + 1);
+}
+
+int byte_in_line(state* state, int byte_offset)
+{
+    return byte_offset / bytes_per_line(state);
+}
+
+int first_byte_in_line(state* state, int line_index)
+{
+    return line_index * bytes_per_line(state);
+}
+
+int last_byte_in_line(state* state, int line_index)
+{
+    return first_byte_in_line(state, line_index + 1) - 1;
+}
+
+int first_visible_byte(state* state)
+{
+    return first_byte_in_line(state, state->scroll_start);
+}
+
+int last_visible_line(state* state)
+{
+    return state->scroll_start + state->hex_height - 1;
+}
+
+int last_visible_byte(state* state)
+{
+    return last_byte_in_line(state, last_visible_line(state));
 }
 
 int main()
@@ -129,10 +170,12 @@ int main()
     state state;
     state.cursor_byte = 0;
     state.cursor_nibble = 0;
+    state.grouping = 1;
+    state.scroll_start = 0;
 
     for (int i = 0; i < SOURCE_LEN; i++)
     {
-       state.source[i] = (unsigned char)i;
+        state.source[i] = (unsigned char)i;
     }
 
     for (int i = 0; i < MAX_OUTPUT_WIDTH * MAX_OUTPUT_HEIGHT; i++)
@@ -176,8 +219,12 @@ int main()
             hex_pane.height = max_y - 20;
 
             hex_pane.width = max_x - 20;
-            hex_pane.height = max_y - 20;
+            //hex_pane.height = max_y - 20;
+            hex_pane.height = 5;
             setup_pane(&hex_pane);
+
+            state.hex_width = hex_pane.width;
+            state.hex_height = hex_pane.height;
 
             detail_pane.top = hex_pane.top + hex_pane.height + 3;
             detail_pane.width = max_x - 20;
@@ -186,6 +233,7 @@ int main()
         }
 
         int element_index;
+        int temp;
 
         switch (ch)
         {
@@ -216,58 +264,87 @@ int main()
                 break;
 
             case KEY_UP:
-                element_index = source_to_element(&state, state.cursor_byte,
-                                                  state.cursor_nibble);
-                element_index -= hex_pane.width;
-                if (element_index >= 0)
+                temp = state.cursor_byte - bytes_per_line(&state);
+
+                if (temp >= 0)
                 {
-                    state.cursor_byte =
-                        state.elements[element_index].source_byte;
+                    state.cursor_byte = temp;
                 }
+
                 break;
 
             case KEY_DOWN:
-                element_index = source_to_element(&state, state.cursor_byte,
-                                                  state.cursor_nibble);
-                element_index += hex_pane.width;
-                if (element_index < state.elements_len)
+                temp = state.cursor_byte + bytes_per_line(&state);
+
+                if (temp < SOURCE_LEN)
                 {
-                    state.cursor_byte =
-                        state.elements[element_index].source_byte;
+                    state.cursor_byte = temp;
                 }
+
+                break;
+
+            case KEY_F(2):
+                state.scroll_start++;
                 break;
         }
 
+        // Scroll up if cursor has left viewport
+        while (state.cursor_byte < first_visible_byte(&state))
+        {
+            state.scroll_start--;
+        }
+
+        // Scroll down if cursor has left viewport
+        while (state.cursor_byte > last_visible_byte(&state))
+        {
+            state.scroll_start++;
+        }
+
+        // Clamp scroll start to beginning of buffer
+        if (state.scroll_start < 0)
+        {
+            state.scroll_start = 0;
+        }
+
+        // Clamp to start of buffer
         if (state.cursor_byte < 0)
         {
             state.cursor_byte = 0;
             state.cursor_nibble = 0;
         }
 
+        // Clamp to end of buffer
         if (state.cursor_byte >= SOURCE_LEN)
         {
             state.cursor_byte = SOURCE_LEN - 1;
             state.cursor_nibble = 1;
         }
 
-        int out_x = 0;
-        int out_y = 0;
-        char hex[2];
 
         int render_cursor_x = 0;
         int render_cursor_y = 0;
-
-        int element_i = 0;
 
         for (int i = 0; i < MAX_OUTPUT_WIDTH * MAX_OUTPUT_HEIGHT; i++)
         {
             state.elements[i].active = false;
         }
 
+        // Render hex data to state.elements
+        int out_x = 0;
+        int out_y = 0;
+        char hex[2];
+        int element_i = 0;
         state.elements_len = 0;
-        for (int i = 0; i < SOURCE_LEN; i++)
+        int si = first_visible_byte(&state);
+        int last_byte = last_visible_byte(&state);
+        if (last_byte >= SOURCE_LEN)
         {
-            unsigned char byte = state.source[i];
+            last_byte = SOURCE_LEN - 1;
+        }
+        int di = 0;
+        while (si <= last_byte)
+        {
+            unsigned char byte = state.source[si];
             byte_to_hex(byte, hex);
 
             if (hex_pane.width - out_x < 2)
@@ -291,7 +368,7 @@ int main()
                 break;
             }
 
-            if (state.cursor_byte == i)
+            if (state.cursor_byte == si)
             {
                 render_cursor_x = hex_pane.left + out_x;
                 render_cursor_y = hex_pane.top + out_y;
@@ -305,7 +382,7 @@ int main()
             element_i = out_y * hex_pane.width + out_x;
             state.elements[element_i].render = hex[0];
             state.elements[element_i].active = true;
-            state.elements[element_i].source_byte = i;
+            state.elements[element_i].source_byte = si;
             state.elements[element_i].source_nibble = 0;
             state.elements[element_i].managed_by = SOURCE;
             state.elements_len++;
@@ -314,7 +391,7 @@ int main()
             element_i = out_y * hex_pane.width + out_x;
             state.elements[element_i].render = hex[1];
             state.elements[element_i].active = true;
-            state.elements[element_i].source_byte = i;
+            state.elements[element_i].source_byte = si;
             state.elements[element_i].source_nibble = 1;
             state.elements[element_i].managed_by = SOURCE;
             state.elements_len++;
@@ -332,6 +409,9 @@ int main()
                 state.elements_len++;
                 out_x++;
             }
+
+            si++;
+            di++;
         }
 
         wclear(hex_pane.window);
@@ -349,12 +429,19 @@ int main()
                 mvwaddch(hex_pane.window, y, x, state.elements[src].render);
             }
         }
-        wrefresh(hex_pane.window);
+        //wrefresh(hex_pane.window);
 
         render_details(&state, &detail_pane);
 
         move(render_cursor_y, render_cursor_x);
+        //wmove(hex_pane.window, 0, 0);
 
-        refresh();
+        wnoutrefresh(hex_pane.window);
+        wnoutrefresh(detail_pane.window);
+
+        doupdate();
+
+        //refresh();
+        //doupdate();
     }
 }
