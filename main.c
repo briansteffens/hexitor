@@ -2,6 +2,8 @@
 
 #include <ncurses.h>
 
+#define SOURCE_LEN 256
+
 typedef struct
 {
     WINDOW* window;
@@ -10,6 +12,16 @@ typedef struct
     int width;
     int height;
 } pane;
+
+pane hex_pane;
+pane detail_pane;
+
+unsigned char source[SOURCE_LEN];
+
+int cursor_byte;
+int cursor_nibble;
+
+int scroll_start;
 
 void setup_pane(pane* pane)
 {
@@ -20,25 +32,6 @@ void setup_pane(pane* pane)
 
     pane->window = newwin(pane->height, pane->width, pane->top, pane->left);
 }
-
-#define SOURCE_LEN 256
-#define MAX_OUTPUT_WIDTH 256
-#define MAX_OUTPUT_HEIGHT 256
-
-typedef struct
-{
-    unsigned char source[SOURCE_LEN];
-
-    int cursor_byte;
-    int cursor_nibble;
-
-    int hex_width;
-    int hex_height;
-
-    int grouping;
-
-    int scroll_start;
-} state;
 
 char nibble_to_hex(unsigned char nibble)
 {
@@ -59,242 +52,260 @@ void byte_to_hex(unsigned char byte, char* hex)
     hex[1] = nibble_to_hex(second);
 }
 
-void render_details(state* state, pane* pane)
+int bytes_per_line()
 {
-    wclear(pane->window);
-
-    unsigned char* cursor_start = state->source + state->cursor_byte;
-
-    mvwprintw(pane->window, 1, 1, "Offset: %d", state->cursor_byte);
-    mvwprintw(pane->window, 2, 1, "Int8:   %d", *(int8_t*)cursor_start);
-    mvwprintw(pane->window, 3, 1, "Uint8:  %d", *(uint8_t*)cursor_start);
-    mvwprintw(pane->window, 4, 1, "Int16:  %d", *(int16_t*)cursor_start);
-    mvwprintw(pane->window, 5, 1, "Uint16: %d", *(uint16_t*)cursor_start);
-    mvwprintw(pane->window, 6, 1, "Int32:  %d", *(int32_t*)cursor_start);
-    mvwprintw(pane->window, 7, 1, "Uint32: %d", *(uint32_t*)cursor_start);
-    mvwprintw(pane->window, 8, 1, "Int64:  %ld", *(int64_t*)cursor_start);
-    mvwprintw(pane->window, 9, 1, "UInt64: %ld", *(uint64_t*)cursor_start);
-
-    box(pane->window, 0, 0);
+    return hex_pane.width / 3;
 }
 
-int bytes_per_line(state* state)
+int byte_in_line(int byte_offset)
 {
-    return state->hex_width / (state->grouping * 2 + 1);
+    return byte_offset / bytes_per_line();
 }
 
-int byte_in_line(state* state, int byte_offset)
+int byte_in_column(int byte_offset)
 {
-    return byte_offset / bytes_per_line(state);
+    return byte_offset % bytes_per_line() * 3;
 }
 
-int byte_in_column(state* state, int byte_offset)
+int first_byte_in_line(int line_index)
 {
-    return byte_offset % bytes_per_line(state) * (state->grouping * 2 + 1);
+    return line_index * bytes_per_line();
 }
 
-int first_byte_in_line(state* state, int line_index)
+int last_byte_in_line(int line_index)
 {
-    return line_index * bytes_per_line(state);
+    return first_byte_in_line(line_index + 1) - 1;
 }
 
-int last_byte_in_line(state* state, int line_index)
+int first_visible_byte()
 {
-    return first_byte_in_line(state, line_index + 1) - 1;
+    return first_byte_in_line(scroll_start);
 }
 
-int first_visible_byte(state* state)
+int last_visible_line()
 {
-    return first_byte_in_line(state, state->scroll_start);
+    return scroll_start + hex_pane.height - 1;
 }
 
-int last_visible_line(state* state)
+int last_visible_byte()
 {
-    return state->scroll_start + state->hex_height - 1;
-}
-
-int last_visible_byte(state* state)
-{
-    int ret = last_byte_in_line(state, last_visible_line(state));
+    int ret = last_byte_in_line(last_visible_line());
 
     return ret < SOURCE_LEN ? ret : SOURCE_LEN - 1;
 }
 
-int main()
+void render_details()
 {
-    state state;
-    state.cursor_byte = 0;
-    state.cursor_nibble = 0;
-    state.grouping = 1;
-    state.scroll_start = 0;
+    WINDOW* w = detail_pane.window;
+    wclear(w);
 
-    for (int i = 0; i < SOURCE_LEN; i++)
-    {
-        state.source[i] = (unsigned char)i;
-    }
+    unsigned char* cursor_start = source + cursor_byte;
 
-    initscr();
-    cbreak();
-    keypad(stdscr, TRUE);
-    refresh();
+    mvwprintw(w, 1, 1, "Offset: %d", cursor_byte);
+    mvwprintw(w, 2, 1, "Int8:   %d", *(int8_t*)cursor_start);
+    mvwprintw(w, 3, 1, "Uint8:  %d", *(uint8_t*)cursor_start);
+    mvwprintw(w, 4, 1, "Int16:  %d", *(int16_t*)cursor_start);
+    mvwprintw(w, 5, 1, "Uint16: %d", *(uint16_t*)cursor_start);
+    mvwprintw(w, 6, 1, "Int32:  %d", *(int32_t*)cursor_start);
+    mvwprintw(w, 7, 1, "Uint32: %d", *(uint32_t*)cursor_start);
+    mvwprintw(w, 8, 1, "Int64:  %ld", *(int64_t*)cursor_start);
+    mvwprintw(w, 9, 1, "UInt64: %ld", *(uint64_t*)cursor_start);
 
-    pane hex_pane;
-    hex_pane.left = 10;
-    hex_pane.top = 3;
+    box(w, 0, 0);
+}
 
-    pane detail_pane;
-    detail_pane.left = 10;
+void handle_sizing()
+{
+    static int last_max_x = -1;
+    static int last_max_y = -1;
 
-    int last_max_x = -1;
-    int last_max_y = -1;
     int max_x;
     int max_y;
 
     getmaxyx(stdscr, max_y, max_x);
 
-    int ch;
-    while ((ch = getch()) != KEY_F(1))
+    if (max_y == last_max_y && max_x == last_max_x)
     {
-        getmaxyx(stdscr, max_y, max_x);
+        return;
+    }
 
-        if (max_y != last_max_y || max_x != last_max_x)
-        {
-            // Terminal resized
-            last_max_x = max_x;
-            last_max_y = max_y;
+    // Terminal resized
+    last_max_x = max_x;
+    last_max_y = max_y;
 
-            hex_pane.width = max_x - 20;
-            hex_pane.height = max_y - 20;
+    hex_pane.width = max_x - 20;
+    hex_pane.height = max_y - 20;
 
-            hex_pane.width = max_x - 20;
-            //hex_pane.height = max_y - 20;
-            hex_pane.height = 5;
-            setup_pane(&hex_pane);
+    hex_pane.width = max_x - 20;
+    //hex_pane.height = max_y - 20;
+    hex_pane.height = 5;
+    setup_pane(&hex_pane);
 
-            state.hex_width = hex_pane.width;
-            state.hex_height = hex_pane.height;
+    detail_pane.top = hex_pane.top + hex_pane.height + 3;
+    detail_pane.width = max_x - 20;
+    detail_pane.height = max_y - hex_pane.height - hex_pane.top - 5;
+    setup_pane(&detail_pane);
+}
 
-            detail_pane.top = hex_pane.top + hex_pane.height + 3;
-            detail_pane.width = max_x - 20;
-            detail_pane.height = max_y - hex_pane.height - hex_pane.top - 5;
-            setup_pane(&detail_pane);
-        }
+void handle_event(int event)
+{
+    int temp;
 
-        int temp;
+    switch (event)
+    {
+        case KEY_LEFT:
+            if (cursor_nibble == 1)
+            {
+                cursor_nibble = 0;
+            }
+            else
+            {
+                cursor_nibble = 1;
+                cursor_byte--;
+            }
 
-        switch (ch)
-        {
-            case KEY_LEFT:
-                if (state.cursor_nibble == 1)
-                {
-                    state.cursor_nibble = 0;
-                }
-                else
-                {
-                    state.cursor_nibble = 1;
-                    state.cursor_byte--;
-                }
+            break;
 
-                break;
+        case KEY_RIGHT:
+            if (cursor_nibble == 0)
+            {
+                cursor_nibble = 1;
+            }
+            else
+            {
+                cursor_nibble = 0;
+                cursor_byte++;
+            }
 
-            case KEY_RIGHT:
-                if (state.cursor_nibble == 0)
-                {
-                    state.cursor_nibble = 1;
-                }
-                else
-                {
-                    state.cursor_nibble = 0;
-                    state.cursor_byte++;
-                }
+            break;
 
-                break;
+        case KEY_UP:
+            temp = cursor_byte - bytes_per_line();
 
-            case KEY_UP:
-                temp = state.cursor_byte - bytes_per_line(&state);
+            if (temp >= 0)
+            {
+                cursor_byte = temp;
+            }
 
-                if (temp >= 0)
-                {
-                    state.cursor_byte = temp;
-                }
+            break;
 
-                break;
+        case KEY_DOWN:
+            temp = cursor_byte + bytes_per_line();
 
-            case KEY_DOWN:
-                temp = state.cursor_byte + bytes_per_line(&state);
+            if (temp < SOURCE_LEN)
+            {
+                cursor_byte = temp;
+            }
 
-                if (temp < SOURCE_LEN)
-                {
-                    state.cursor_byte = temp;
-                }
+            break;
+    }
+}
 
-                break;
+void clamp_scrolling()
+{
+    // Clamp to start of buffer
+    if (cursor_byte < 0)
+    {
+        cursor_byte = 0;
+        cursor_nibble = 0;
+    }
 
-            case KEY_F(2):
-                state.scroll_start++;
-                break;
-        }
+    // Clamp to end of buffer
+    if (cursor_byte >= SOURCE_LEN)
+    {
+        cursor_byte = SOURCE_LEN - 1;
+        cursor_nibble = 1;
+    }
 
-        // Clamp to start of buffer
-        if (state.cursor_byte < 0)
-        {
-            state.cursor_byte = 0;
-            state.cursor_nibble = 0;
-        }
+    // Scroll up if cursor has left viewport
+    while (cursor_byte < first_visible_byte())
+    {
+        scroll_start--;
+    }
 
-        // Clamp to end of buffer
-        if (state.cursor_byte >= SOURCE_LEN)
-        {
-            state.cursor_byte = SOURCE_LEN - 1;
-            state.cursor_nibble = 1;
-        }
+    // Scroll down if cursor has left viewport
+    while (cursor_byte > last_visible_byte())
+    {
+        scroll_start++;
+    }
 
-        // Scroll up if cursor has left viewport
-        while (state.cursor_byte < first_visible_byte(&state))
-        {
-            state.scroll_start--;
-        }
+    // Clamp scroll start to beginning of buffer
+    if (scroll_start < 0)
+    {
+        scroll_start = 0;
+    }
+}
 
-        // Scroll down if cursor has left viewport
-        while (state.cursor_byte > last_visible_byte(&state))
-        {
-            state.scroll_start++;
-        }
+void render_hex()
+{
+    wclear(hex_pane.window);
 
-        // Clamp scroll start to beginning of buffer
-        if (state.scroll_start < 0)
-        {
-            state.scroll_start = 0;
-        }
+    char hex[2];
 
-        // Render hex data
-        wclear(hex_pane.window);
-        char hex[2];
-        for (int i = first_visible_byte(&state);
-             i <= last_visible_byte(&state); i++)
-        {
-            byte_to_hex(state.source[i], hex);
+    for (int i = first_visible_byte(); i <= last_visible_byte(); i++)
+    {
+        byte_to_hex(source[i], hex);
 
-            int out_y = byte_in_line(&state, i) - state.scroll_start;
-            int out_x = byte_in_column(&state, i);
+        int out_y = byte_in_line(i) - scroll_start;
+        int out_x = byte_in_column(i);
 
-            mvwprintw(hex_pane.window, out_y, out_x, "%c%c ", hex[0], hex[1]);
-        }
+        mvwprintw(hex_pane.window, out_y, out_x, "%c%c ", hex[0], hex[1]);
+    }
+}
 
-        render_details(&state, &detail_pane);
+void place_cursor()
+{
+    int render_cursor_x = hex_pane.left +
+        byte_in_column(cursor_byte) + cursor_nibble;
+    int render_cursor_y = hex_pane.top +
+        byte_in_line(cursor_byte) - scroll_start;
 
-        // Place cursor
-        int render_cursor_x = hex_pane.left +
-            byte_in_column(&state, state.cursor_byte) + state.cursor_nibble;
-        int render_cursor_y = hex_pane.top +
-            byte_in_line(&state, state.cursor_byte) - state.scroll_start;
+    move(render_cursor_y, render_cursor_x);
+}
 
-        move(render_cursor_y, render_cursor_x);
+void flush_output()
+{
+    wnoutrefresh(hex_pane.window);
+    wnoutrefresh(detail_pane.window);
 
-        // Flush output
-        wnoutrefresh(hex_pane.window);
-        wnoutrefresh(detail_pane.window);
+    doupdate();
+}
 
-        doupdate();
+void update(int event)
+{
+    handle_sizing();
+    handle_event(event);
+    clamp_scrolling();
+    render_hex();
+    render_details();
+    place_cursor();
+    flush_output();
+}
+
+int main()
+{
+    cursor_byte = 0;
+    cursor_nibble = 0;
+    scroll_start = 0;
+
+    hex_pane.left = 10;
+    hex_pane.top = 3;
+
+    detail_pane.left = 10;
+
+    for (int i = 0; i < SOURCE_LEN; i++)
+    {
+        source[i] = (unsigned char)i;
+    }
+
+    initscr();
+    cbreak();
+    keypad(stdscr, TRUE);
+
+    int event;
+
+    while ((event = getch()) != KEY_F(1))
+    {
+        update(event);
     }
 }
