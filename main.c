@@ -301,6 +301,9 @@ int main()
     initscr();
     cbreak();
     keypad(stdscr, TRUE);
+    refresh();
+
+    update(-1);
 
     int event;
 
