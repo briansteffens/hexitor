@@ -1,4 +1,5 @@
 #include <stdlib.h>
+#include <stdio.h>
 
 #include <ncurses.h>
 
@@ -23,6 +24,8 @@ int cursor_nibble;
 
 int scroll_start;
 
+FILE* log_file;
+
 void setup_pane(pane* pane)
 {
     if (pane->window)
@@ -43,13 +46,35 @@ char nibble_to_hex(unsigned char nibble)
     return 'a' + nibble - 10;
 }
 
+unsigned char hex_to_nibble(char hex)
+{
+    if (hex >= 'a')
+    {
+        return hex - 'a' + 10;
+    }
+
+    return hex - '0';
+}
+
+unsigned char first_nibble(unsigned char byte)
+{
+    return byte >> 4;
+}
+
+unsigned char second_nibble(unsigned char byte)
+{
+    return byte & 0x0f;
+}
+
 void byte_to_hex(unsigned char byte, char* hex)
 {
-    unsigned char first = byte >> 4;
-    unsigned char second = byte & 0x0f;
+    hex[0] = nibble_to_hex(first_nibble(byte));
+    hex[1] = nibble_to_hex(second_nibble(byte));
+}
 
-    hex[0] = nibble_to_hex(first);
-    hex[1] = nibble_to_hex(second);
+unsigned char nibbles_to_byte(unsigned char n0, unsigned char n1)
+{
+    return n0 << 4 | n1;
 }
 
 int bytes_per_line()
@@ -147,57 +172,88 @@ void handle_sizing()
     setup_pane(&detail_pane);
 }
 
+void handle_key_left()
+{
+    if (cursor_nibble == 1)
+    {
+        cursor_nibble = 0;
+    }
+    else
+    {
+        cursor_nibble = 1;
+        cursor_byte--;
+    }
+}
+
+void handle_key_right()
+{
+    if (cursor_nibble == 0)
+    {
+        cursor_nibble = 1;
+    }
+    else
+    {
+        cursor_nibble = 0;
+        cursor_byte++;
+    }
+}
+
+void handle_key_up()
+{
+    int temp = cursor_byte - bytes_per_line();
+
+    if (temp >= 0)
+    {
+        cursor_byte = temp;
+    }
+}
+
+void handle_key_down()
+{
+    int temp = cursor_byte + bytes_per_line();
+
+    if (temp < SOURCE_LEN)
+    {
+        cursor_byte = temp;
+    }
+}
+
+void handle_overwrite(int event)
+{
+    // Convert A-F to lower case
+    if (event >= 'A' && event <= 'F')
+    {
+        event += 'a' - 'A';
+    }
+
+    // Only process 0-9 and a-f
+    if (!((event >= '0' && event <= '9') || (event >= 'a' && event <= 'f')))
+    {
+        return;
+    }
+
+    unsigned char* byte = &source[cursor_byte];
+
+    unsigned char first = first_nibble(*byte);
+    unsigned char second = second_nibble(*byte);
+
+    unsigned char* nibble = cursor_nibble ? &second : &first;
+    *nibble = hex_to_nibble(event);
+
+    *byte = nibbles_to_byte(first, second);
+
+    handle_key_right();
+}
+
 void handle_event(int event)
 {
-    int temp;
-
     switch (event)
     {
-        case KEY_LEFT:
-            if (cursor_nibble == 1)
-            {
-                cursor_nibble = 0;
-            }
-            else
-            {
-                cursor_nibble = 1;
-                cursor_byte--;
-            }
-
-            break;
-
-        case KEY_RIGHT:
-            if (cursor_nibble == 0)
-            {
-                cursor_nibble = 1;
-            }
-            else
-            {
-                cursor_nibble = 0;
-                cursor_byte++;
-            }
-
-            break;
-
-        case KEY_UP:
-            temp = cursor_byte - bytes_per_line();
-
-            if (temp >= 0)
-            {
-                cursor_byte = temp;
-            }
-
-            break;
-
-        case KEY_DOWN:
-            temp = cursor_byte + bytes_per_line();
-
-            if (temp < SOURCE_LEN)
-            {
-                cursor_byte = temp;
-            }
-
-            break;
+        case KEY_LEFT:  handle_key_left();       break;
+        case KEY_RIGHT: handle_key_right();      break;
+        case KEY_UP:    handle_key_up();         break;
+        case KEY_DOWN:  handle_key_down();       break;
+        default:        handle_overwrite(event); break;
     }
 }
 
@@ -284,6 +340,8 @@ void update(int event)
 
 int main()
 {
+    log_file = fopen("logfile", "w");
+
     cursor_byte = 0;
     cursor_nibble = 0;
     scroll_start = 0;
@@ -311,4 +369,6 @@ int main()
     {
         update(event);
     }
+
+    fclose(log_file);
 }
