@@ -249,10 +249,22 @@ void handle_event(int event)
 {
     switch (event)
     {
+        case 'h':
+        case 'H':
         case KEY_LEFT:  handle_key_left();       break;
+
+        case 'l':
+        case 'L':
         case KEY_RIGHT: handle_key_right();      break;
+
+        case 'k':
+        case 'K':
         case KEY_UP:    handle_key_up();         break;
+
+        case 'j':
+        case 'J':
         case KEY_DOWN:  handle_key_down();       break;
+
         default:        handle_overwrite(event); break;
     }
 }
