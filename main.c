@@ -1,9 +1,10 @@
 #include <stdlib.h>
 #include <stdio.h>
+#include <sys/stat.h>
 
 #include <ncurses.h>
 
-#define SOURCE_LEN 256
+#define READ_BUFFER_SIZE 16 * 1024
 
 typedef struct
 {
@@ -17,7 +18,8 @@ typedef struct
 pane hex_pane;
 pane detail_pane;
 
-unsigned char source[SOURCE_LEN];
+unsigned char* source = NULL;
+int source_len;
 
 int cursor_byte;
 int cursor_nibble;
@@ -116,7 +118,7 @@ int last_visible_byte()
 {
     int ret = last_byte_in_line(last_visible_line());
 
-    return ret < SOURCE_LEN ? ret : SOURCE_LEN - 1;
+    return ret < source_len ? ret : source_len - 1;
 }
 
 void render_details()
@@ -212,7 +214,7 @@ void handle_key_down()
 {
     int temp = cursor_byte + bytes_per_line();
 
-    if (temp < SOURCE_LEN)
+    if (temp < source_len)
     {
         cursor_byte = temp;
     }
@@ -279,9 +281,9 @@ void clamp_scrolling()
     }
 
     // Clamp to end of buffer
-    if (cursor_byte >= SOURCE_LEN)
+    if (cursor_byte >= source_len)
     {
-        cursor_byte = SOURCE_LEN - 1;
+        cursor_byte = source_len - 1;
         cursor_nibble = 1;
     }
 
@@ -350,8 +352,54 @@ void update(int event)
     flush_output();
 }
 
-int main()
+void open_file(const char* filename)
 {
+    // Get filesize
+    struct stat st;
+    stat(filename, &st);
+    source_len = st.st_size;
+    int count = st.st_size * sizeof(unsigned char);
+
+    // Allocate or reallocate memory
+    if (source == NULL)
+    {
+        source = malloc(count);
+    }
+    else
+    {
+        source = realloc(source, count);
+    }
+
+    // Read file into memory
+    FILE* file = fopen(filename, "r");
+
+    if (!file)
+    {
+        printf("Error opening file. File not found / permissions problem?\n");
+        exit(2);
+    }
+
+    unsigned char* target = source;
+    size_t bytes_read;
+
+    while ((bytes_read = fread(target, 1, READ_BUFFER_SIZE, file)) > 0)
+    {
+        target += bytes_read;
+    }
+
+    fclose(file);
+}
+
+int main(int argc, char* argv[])
+{
+    if (argc != 2)
+    {
+        printf("Usage: hexitor <filename>\n");
+        return 1;
+    }
+
+    open_file(argv[1]);
+
     log_file = fopen("logfile", "w");
 
     cursor_byte = 0;
@@ -362,11 +410,6 @@ int main()
     hex_pane.top = 3;
 
     detail_pane.left = 10;
-
-    for (int i = 0; i < SOURCE_LEN; i++)
-    {
-        source[i] = (unsigned char)i;
-    }
 
     initscr();
     cbreak();
