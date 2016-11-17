@@ -16,6 +16,7 @@ typedef struct
 } pane;
 
 pane hex_pane;
+pane ascii_pane;
 pane detail_pane;
 
 unsigned char* source = NULL;
@@ -121,26 +122,6 @@ int last_visible_byte()
     return ret < source_len ? ret : source_len - 1;
 }
 
-void render_details()
-{
-    WINDOW* w = detail_pane.window;
-    wclear(w);
-
-    unsigned char* cursor_start = source + cursor_byte;
-
-    mvwprintw(w, 1, 1, "Offset: %d", cursor_byte);
-    mvwprintw(w, 2, 1, "Int8:   %d", *(int8_t*)cursor_start);
-    mvwprintw(w, 3, 1, "Uint8:  %d", *(uint8_t*)cursor_start);
-    mvwprintw(w, 4, 1, "Int16:  %d", *(int16_t*)cursor_start);
-    mvwprintw(w, 5, 1, "Uint16: %d", *(uint16_t*)cursor_start);
-    mvwprintw(w, 6, 1, "Int32:  %d", *(int32_t*)cursor_start);
-    mvwprintw(w, 7, 1, "Uint32: %d", *(uint32_t*)cursor_start);
-    mvwprintw(w, 8, 1, "Int64:  %ld", *(int64_t*)cursor_start);
-    mvwprintw(w, 9, 1, "UInt64: %ld", *(uint64_t*)cursor_start);
-
-    box(w, 0, 0);
-}
-
 void handle_sizing()
 {
     static int last_max_x = -1;
@@ -160,13 +141,18 @@ void handle_sizing()
     last_max_x = max_x;
     last_max_y = max_y;
 
-    hex_pane.width = max_x - 20;
-    hex_pane.height = max_y - 20;
+    int data_width = max_x - 20;
 
-    hex_pane.width = max_x - 20;
+    hex_pane.width = data_width * 0.75;
     //hex_pane.height = max_y - 20;
     hex_pane.height = 5;
     setup_pane(&hex_pane);
+
+    ascii_pane.left = hex_pane.left + hex_pane.width;
+    ascii_pane.top = hex_pane.top;
+    ascii_pane.width = data_width * 0.25;
+    ascii_pane.height = 5;
+    setup_pane(&ascii_pane);
 
     detail_pane.top = hex_pane.top + hex_pane.height + 3;
     detail_pane.width = max_x - 20;
@@ -323,6 +309,46 @@ void render_hex()
     }
 }
 
+void render_ascii()
+{
+    wclear(ascii_pane.window);
+
+    for (int i = first_visible_byte(); i <= last_visible_byte(); i++)
+    {
+        int out_y = byte_in_line(i) - scroll_start;
+        int out_x = i % bytes_per_line();
+
+        char output = '.';
+
+        if (source[i] >= ' ' && source[i] <= '~')
+        {
+            output = source[i];
+        }
+
+        mvwprintw(ascii_pane.window, out_y, out_x, "%c", output);
+    }
+}
+
+void render_details()
+{
+    WINDOW* w = detail_pane.window;
+    wclear(w);
+
+    unsigned char* cursor_start = source + cursor_byte;
+
+    mvwprintw(w, 1, 1, "Offset: %d", cursor_byte);
+    mvwprintw(w, 2, 1, "Int8:   %d", *(int8_t*)cursor_start);
+    mvwprintw(w, 3, 1, "Uint8:  %d", *(uint8_t*)cursor_start);
+    mvwprintw(w, 4, 1, "Int16:  %d", *(int16_t*)cursor_start);
+    mvwprintw(w, 5, 1, "Uint16: %d", *(uint16_t*)cursor_start);
+    mvwprintw(w, 6, 1, "Int32:  %d", *(int32_t*)cursor_start);
+    mvwprintw(w, 7, 1, "Uint32: %d", *(uint32_t*)cursor_start);
+    mvwprintw(w, 8, 1, "Int64:  %ld", *(int64_t*)cursor_start);
+    mvwprintw(w, 9, 1, "UInt64: %ld", *(uint64_t*)cursor_start);
+
+    box(w, 0, 0);
+}
+
 void place_cursor()
 {
     int render_cursor_x = hex_pane.left +
@@ -336,6 +362,7 @@ void place_cursor()
 void flush_output()
 {
     wnoutrefresh(hex_pane.window);
+    wnoutrefresh(ascii_pane.window);
     wnoutrefresh(detail_pane.window);
 
     doupdate();
@@ -347,6 +374,7 @@ void update(int event)
     handle_event(event);
     clamp_scrolling();
     render_hex();
+    render_ascii();
     render_details();
     place_cursor();
     flush_output();
