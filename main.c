@@ -265,6 +265,22 @@ void handle_write()
     }
 }
 
+void handle_jump_offset()
+{
+    // Make sure the command is an ASCII integer
+    for (int i = 1; i < command_len; i++)
+    {
+        if (command[i] < '0' || command[i] > '9')
+        {
+            return;
+        }
+    }
+
+    // Move cursor to requested offset
+    cursor_byte = atoi(command + 1);
+    cursor_nibble = 0;
+}
+
 void handle_submit_command()
 {
     command[command_len] = 0;
@@ -282,6 +298,8 @@ void handle_submit_command()
         handle_write();
         return;
     }
+
+    handle_jump_offset();
 }
 
 void handle_backspace_command()
