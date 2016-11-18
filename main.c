@@ -1,10 +1,16 @@
 #include <stdlib.h>
 #include <stdio.h>
+#include <stdbool.h>
 #include <sys/stat.h>
 
 #include <ncurses.h>
 
 #define READ_BUFFER_SIZE 16 * 1024
+#define MAX_COMMAND_LEN 256
+
+#define KEY_ESC 27
+#define KEY_RETURN 10
+#define KEY_DELETE 127
 
 typedef struct
 {
@@ -26,6 +32,13 @@ int cursor_byte;
 int cursor_nibble;
 
 int scroll_start;
+
+int max_x;
+int max_y;
+
+char command[MAX_COMMAND_LEN];
+int command_len;
+bool command_entering = false;
 
 FILE* log_file;
 
@@ -126,9 +139,6 @@ void handle_sizing()
 {
     static int last_max_x = -1;
     static int last_max_y = -1;
-
-    int max_x;
-    int max_y;
 
     getmaxyx(stdscr, max_y, max_x);
 
@@ -233,8 +243,115 @@ void handle_overwrite(int event)
     handle_key_right();
 }
 
+void handle_start_command()
+{
+    command_entering = true;
+    command[0] = ':';
+    command_len = 1;
+}
+
+void unrender_command()
+{
+    move(max_y - 1, 0);
+
+    for (int i = 0; i < max_x; i++)
+    {
+        addch(' ');
+    }
+}
+
+void handle_cancel_command()
+{
+    command_entering = false;
+    unrender_command();
+}
+
+void handle_submit_command()
+{
+    command[command_len] = 0;
+
+    fprintf(log_file, "command '%s'\n", command);
+    fflush(log_file);
+
+    command_entering = false;
+
+    unrender_command();
+}
+
+void handle_backspace_command()
+{
+    if (command_len > 1)
+    {
+        command_len--;
+    }
+}
+
+void handle_add_to_command(int event)
+{
+    if (event < 32 || event > '~')
+    {
+        return;
+    }
+
+    if (command_len >= MAX_COMMAND_LEN)
+    {
+        return;
+    }
+
+    command[command_len++] = event;
+}
+
+void handle_command_event(int event)
+{
+    switch (event)
+    {
+        case KEY_ESC:    handle_cancel_command();      break;
+        case KEY_RETURN: handle_submit_command();      break;
+        case KEY_DELETE: handle_backspace_command();   break;
+        default:         handle_add_to_command(event); break;
+    }
+}
+
+void render_command()
+{
+    if (!command_entering)
+    {
+        return;
+    }
+
+    int start = 0;
+    int len = command_len;
+
+    // Scroll command horizontally
+    if (command_len >= max_x - 1)
+    {
+        start = command_len - max_x + 1;
+        len = max_x - 1;
+    }
+
+    move(max_y - 1, 0);
+
+    // Print command to screen
+    for (int i = 0; i < len; i++)
+    {
+        addch(command[start + i]);
+    }
+
+    // Clear the rest of the command line
+    for (int i = len; i < max_x; i++)
+    {
+        addch(' ');
+    }
+}
+
 void handle_event(int event)
 {
+    if (command_entering)
+    {
+        handle_command_event(event);
+        return;
+    }
+
     switch (event)
     {
         case 'h':
@@ -252,6 +369,8 @@ void handle_event(int event)
         case 'j':
         case 'J':
         case KEY_DOWN:  handle_key_down();       break;
+
+        case ':':       handle_start_command();  break;
 
         default:        handle_overwrite(event); break;
     }
@@ -351,10 +470,21 @@ void render_details()
 
 void place_cursor()
 {
-    int render_cursor_x = hex_pane.left +
-        byte_in_column(cursor_byte) + cursor_nibble;
-    int render_cursor_y = hex_pane.top +
-        byte_in_line(cursor_byte) - scroll_start;
+    int render_cursor_x;
+    int render_cursor_y;
+
+    if (command_entering)
+    {
+        render_cursor_y = max_y - 1;
+        render_cursor_x = command_len >= max_x ? max_x : command_len;
+    }
+    else
+    {
+        render_cursor_x = hex_pane.left + byte_in_column(cursor_byte) +
+                          cursor_nibble;
+        render_cursor_y = hex_pane.top + byte_in_line(cursor_byte) -
+                          scroll_start;
+    }
 
     move(render_cursor_y, render_cursor_x);
 }
@@ -376,6 +506,7 @@ void update(int event)
     render_hex();
     render_ascii();
     render_details();
+    render_command();
     place_cursor();
     flush_output();
 }
