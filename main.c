@@ -445,6 +445,17 @@ void handle_overwrite(int event)
     handle_key_right();
 }
 
+void handle_page_up()
+{
+    cursor_byte -= hex_pane.height * bytes_per_line();
+}
+
+void handle_page_down()
+{
+    cursor_byte += hex_pane.height * bytes_per_line();
+    scroll_start += hex_pane.height;
+}
+
 void handle_event(int event)
 {
     if (command_entering)
@@ -457,23 +468,43 @@ void handle_event(int event)
     {
         case 'h':
         case 'H':
-        case KEY_LEFT:  handle_key_left();       break;
+        case KEY_LEFT:
+            handle_key_left();
+            break;
 
         case 'l':
         case 'L':
-        case KEY_RIGHT: handle_key_right();      break;
+        case KEY_RIGHT:
+            handle_key_right();
+            break;
 
         case 'k':
         case 'K':
-        case KEY_UP:    handle_key_up();         break;
+        case KEY_UP:
+            handle_key_up();
+            break;
 
         case 'j':
         case 'J':
-        case KEY_DOWN:  handle_key_down();       break;
+        case KEY_DOWN:
+            handle_key_down();
+            break;
 
-        case ':':       handle_start_command();  break;
+        case KEY_PPAGE:
+            handle_page_up();
+            break;
 
-        default:        handle_overwrite(event); break;
+        case KEY_NPAGE:
+            handle_page_down();
+            break;
+
+        case ':':
+            handle_start_command();
+            break;
+
+        default:
+            handle_overwrite(event);
+            break;
     }
 }
 
