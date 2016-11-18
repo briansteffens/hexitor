@@ -154,22 +154,23 @@ void handle_sizing()
     last_max_x = max_x;
     last_max_y = max_y;
 
-    int data_width = max_x - 20;
+    detail_pane.height = 7;
 
-    hex_pane.width = data_width * 0.75;
-    //hex_pane.height = max_y - 20;
-    hex_pane.height = 5;
+    hex_pane.left = 1;
+    hex_pane.top = 0;
+    hex_pane.width = (max_x - 1) * 0.75;
+    hex_pane.height = max_y - detail_pane.height;
     setup_pane(&hex_pane);
 
     ascii_pane.left = hex_pane.left + hex_pane.width;
     ascii_pane.top = hex_pane.top;
-    ascii_pane.width = data_width * 0.25;
-    ascii_pane.height = 5;
+    ascii_pane.width = (max_x - 1) * 0.25;
+    ascii_pane.height = max_y - detail_pane.height;
     setup_pane(&ascii_pane);
 
-    detail_pane.top = hex_pane.top + hex_pane.height + 3;
-    detail_pane.width = max_x - 20;
-    detail_pane.height = max_y - hex_pane.height - hex_pane.top - 5;
+    detail_pane.left = 0;
+    detail_pane.top = max_y - detail_pane.height;
+    detail_pane.width = max_x;
     setup_pane(&detail_pane);
 }
 
@@ -560,10 +561,10 @@ void render_details()
     mvwprintw(w, 3, 1, "UInt8:  %d", *(uint8_t*)cursor_start);
     mvwprintw(w, 4, 1, "Int16:  %d", *(int16_t*)cursor_start);
     mvwprintw(w, 5, 1, "UInt16: %d", *(uint16_t*)cursor_start);
-    mvwprintw(w, 6, 1, "Int32:  %d", *(int32_t*)cursor_start);
-    mvwprintw(w, 7, 1, "UInt32: %d", *(uint32_t*)cursor_start);
-    mvwprintw(w, 8, 1, "Int64:  %ld", *(int64_t*)cursor_start);
-    mvwprintw(w, 9, 1, "UInt64: %ld", *(uint64_t*)cursor_start);
+    mvwprintw(w, 2, 30, "Int32:  %d", *(int32_t*)cursor_start);
+    mvwprintw(w, 3, 30, "UInt32: %d", *(uint32_t*)cursor_start);
+    mvwprintw(w, 4, 30, "Int64:  %ld", *(int64_t*)cursor_start);
+    mvwprintw(w, 5, 30, "UInt64: %ld", *(uint64_t*)cursor_start);
 
     box(w, 0, 0);
 }
@@ -666,11 +667,6 @@ int main(int argc, char* argv[])
     cursor_byte = 0;
     cursor_nibble = 0;
     scroll_start = 0;
-
-    hex_pane.left = 10;
-    hex_pane.top = 3;
-
-    detail_pane.left = 10;
 
     initscr();
     cbreak();
