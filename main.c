@@ -1,11 +1,12 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <stdbool.h>
+#include <string.h>
 #include <sys/stat.h>
 
 #include <ncurses.h>
 
-#define READ_BUFFER_SIZE 16 * 1024
+#define BUFFER_SIZE 16 * 1024
 #define MAX_COMMAND_LEN 256
 
 #define KEY_ESC 27
@@ -27,6 +28,8 @@ pane detail_pane;
 
 unsigned char* source = NULL;
 int source_len;
+
+char* original_filename;
 
 int cursor_byte;
 int cursor_nibble;
@@ -170,6 +173,186 @@ void handle_sizing()
     setup_pane(&detail_pane);
 }
 
+void handle_start_command()
+{
+    command_entering = true;
+    command[0] = ':';
+    command_len = 1;
+}
+
+void unrender_command()
+{
+    move(max_y - 1, 0);
+
+    for (int i = 0; i < max_x; i++)
+    {
+        addch(' ');
+    }
+}
+
+void handle_cancel_command()
+{
+    command_entering = false;
+    unrender_command();
+}
+
+void quit()
+{
+    if (source != NULL)
+    {
+        free(source);
+    }
+
+    endwin();
+    exit(0);
+}
+
+void handle_write()
+{
+    char* subcommand = command + 2;
+    int remaining = command_len - 2;
+
+    // Check for quit
+    bool also_quit = false;
+    if (remaining > 0 && subcommand[0] == 'q')
+    {
+        also_quit = true;
+        subcommand++;
+        remaining--;
+    }
+
+    // Check for filename in command
+    char* filename = original_filename;
+    if (remaining > 0 && subcommand[0] == ' ')
+    {
+        filename = subcommand + 1;
+    }
+
+    // Write file to disk
+    FILE* file = fopen(filename, "w");
+
+    if (!file)
+    {
+        // TODO: better things
+        printf("Error opening file. File not found / permissions problem?\n");
+        exit(3);
+    }
+
+    size_t bytes_written = 0;
+    size_t bytes_left = source_len;
+
+    while (bytes_left > 0)
+    {
+        size_t size = BUFFER_SIZE < bytes_left ? BUFFER_SIZE : bytes_left;
+        size_t written = fwrite(source + bytes_written, 1, size, file);
+
+        if (written != size)
+        {
+            // TODO: better things
+            printf("Encountered error while writing file; may be corrupt.\n");
+            exit(4);
+        }
+
+        bytes_written += written;
+        bytes_left -= written;
+    }
+
+    fclose(file);
+
+    if (also_quit)
+    {
+        quit();
+    }
+}
+
+void handle_submit_command()
+{
+    command[command_len] = 0;
+    command_entering = false;
+    unrender_command();
+
+    if (strncmp(command, ":q", MAX_COMMAND_LEN) == 0)
+    {
+        quit();
+        return;
+    }
+
+    if (command[1] == 'w')
+    {
+        handle_write();
+        return;
+    }
+}
+
+void handle_backspace_command()
+{
+    if (command_len == 1)
+    {
+        handle_cancel_command();
+        return;
+    }
+
+    command_len--;
+}
+
+void handle_add_to_command(int event)
+{
+    if (event < 32 || event > '~')
+    {
+        return;
+    }
+
+    if (command_len >= MAX_COMMAND_LEN)
+    {
+        return;
+    }
+
+    command[command_len++] = event;
+}
+
+void handle_command_event(int event)
+{
+    switch (event)
+    {
+        case KEY_ESC:    handle_cancel_command();      break;
+        case KEY_RETURN: handle_submit_command();      break;
+        case KEY_DELETE: handle_backspace_command();   break;
+        default:         handle_add_to_command(event); break;
+    }
+}
+
+void render_command()
+{
+    if (!command_entering)
+    {
+        return;
+    }
+
+    int start = 0;
+    int len = command_len;
+
+    // Scroll command horizontally
+    if (command_len >= max_x - 1)
+    {
+        start = command_len - max_x + 1;
+        len = max_x - 1;
+    }
+
+    move(max_y - 1, 0);
+
+    // Print command to screen
+    for (int i = 0; i < len; i++)
+    {
+        addch(command[start + i]);
+    }
+
+    // Clear the rest of the command line
+    for (int i = len; i < max_x; i++)
+    {
+        addch(' ');
+    }
+}
+
 void handle_key_left()
 {
     if (cursor_nibble == 1)
@@ -241,107 +424,6 @@ void handle_overwrite(int event)
     *byte = nibbles_to_byte(first, second);
 
     handle_key_right();
-}
-
-void handle_start_command()
-{
-    command_entering = true;
-    command[0] = ':';
-    command_len = 1;
-}
-
-void unrender_command()
-{
-    move(max_y - 1, 0);
-
-    for (int i = 0; i < max_x; i++)
-    {
-        addch(' ');
-    }
-}
-
-void handle_cancel_command()
-{
-    command_entering = false;
-    unrender_command();
-}
-
-void handle_submit_command()
-{
-    command[command_len] = 0;
-
-    fprintf(log_file, "command '%s'\n", command);
-    fflush(log_file);
-
-    command_entering = false;
-
-    unrender_command();
-}
-
-void handle_backspace_command()
-{
-    if (command_len > 1)
-    {
-        command_len--;
-    }
-}
-
-void handle_add_to_command(int event)
-{
-    if (event < 32 || event > '~')
-    {
-        return;
-    }
-
-    if (command_len >= MAX_COMMAND_LEN)
-    {
-        return;
-    }
-
-    command[command_len++] = event;
-}
-
-void handle_command_event(int event)
-{
-    switch (event)
-    {
-        case KEY_ESC:    handle_cancel_command();      break;
-        case KEY_RETURN: handle_submit_command();      break;
-        case KEY_DELETE: handle_backspace_command();   break;
-        default:         handle_add_to_command(event); break;
-    }
-}
-
-void render_command()
-{
-    if (!command_entering)
-    {
-        return;
-    }
-
-    int start = 0;
-    int len = command_len;
-
-    // Scroll command horizontally
-    if (command_len >= max_x - 1)
-    {
-        start = command_len - max_x + 1;
-        len = max_x - 1;
-    }
-
-    move(max_y - 1, 0);
-
-    // Print command to screen
-    for (int i = 0; i < len; i++)
-    {
-        addch(command[start + i]);
-    }
-
-    // Clear the rest of the command line
-    for (int i = len; i < max_x; i++)
-    {
-        addch(' ');
-    }
 }
 
 void handle_event(int event)
@@ -457,11 +539,11 @@ void render_details()
 
     mvwprintw(w, 1, 1, "Offset: %d", cursor_byte);
     mvwprintw(w, 2, 1, "Int8:   %d", *(int8_t*)cursor_start);
-    mvwprintw(w, 3, 1, "Uint8:  %d", *(uint8_t*)cursor_start);
+    mvwprintw(w, 3, 1, "UInt8:  %d", *(uint8_t*)cursor_start);
     mvwprintw(w, 4, 1, "Int16:  %d", *(int16_t*)cursor_start);
-    mvwprintw(w, 5, 1, "Uint16: %d", *(uint16_t*)cursor_start);
+    mvwprintw(w, 5, 1, "UInt16: %d", *(uint16_t*)cursor_start);
     mvwprintw(w, 6, 1, "Int32:  %d", *(int32_t*)cursor_start);
-    mvwprintw(w, 7, 1, "Uint32: %d", *(uint32_t*)cursor_start);
+    mvwprintw(w, 7, 1, "UInt32: %d", *(uint32_t*)cursor_start);
     mvwprintw(w, 8, 1, "Int64:  %ld", *(int64_t*)cursor_start);
     mvwprintw(w, 9, 1, "UInt64: %ld", *(uint64_t*)cursor_start);
 
@@ -511,7 +593,7 @@ void update(int event)
     flush_output();
 }
 
-void open_file(const char* filename)
+void open_file(char* filename)
 {
     // Get filesize
     struct stat st;
@@ -541,12 +623,14 @@ void open_file(const char* filename)
     unsigned char* target = source;
     size_t bytes_read;
 
-    while ((bytes_read = fread(target, 1, READ_BUFFER_SIZE, file)) > 0)
+    while ((bytes_read = fread(target, 1, BUFFER_SIZE, file)) > 0)
     {
         target += bytes_read;
     }
 
     fclose(file);
+
+    original_filename = filename;
 }
 
 int main(int argc, char* argv[])
