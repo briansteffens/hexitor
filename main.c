@@ -227,7 +227,7 @@ void handle_write()
         filename = subcommand + 1;
     }
 
-    // Write file to disk
+    // Write buffer to disk
     FILE* file = fopen(filename, "w");
 
     if (!file)

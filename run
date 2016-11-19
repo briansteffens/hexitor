@@ -1,3 +1,0 @@
-#!/usr/bin/env bash
-
-gcc main.c -lncurses && ./a.out other
