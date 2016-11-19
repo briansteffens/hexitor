@@ -11,4 +11,4 @@ uninstall:
 	rm ${DESTDIR}/usr/bin/hexitor
 
 clean:
-	rm a.out
+	rm -f a.out
