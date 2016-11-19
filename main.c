@@ -31,10 +31,10 @@ int source_len;
 
 char* original_filename;
 
-int cursor_byte;
-int cursor_nibble;
+int cursor_byte = 0;
+int cursor_nibble = 0;
 
-int scroll_start;
+int scroll_start = 0;
 
 int max_x;
 int max_y;
@@ -42,8 +42,6 @@ int max_y;
 char command[MAX_COMMAND_LEN];
 int command_len;
 bool command_entering = false;
-
-FILE* log_file;
 
 void setup_pane(pane* pane)
 {
@@ -693,12 +691,6 @@ int main(int argc, char* argv[])
 
     open_file(argv[1]);
 
-    log_file = fopen("logfile", "w");
-
-    cursor_byte = 0;
-    cursor_nibble = 0;
-    scroll_start = 0;
-
     initscr();
     cbreak();
     keypad(stdscr, TRUE);
@@ -712,6 +704,4 @@ int main(int argc, char* argv[])
     {
         update(event);
     }
-
-    fclose(log_file);
 }
