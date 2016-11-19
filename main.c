@@ -8,10 +8,13 @@
 
 #define BUFFER_SIZE 16 * 1024
 #define MAX_COMMAND_LEN 256
+#define MAX_ERROR_LEN 64
 
 #define KEY_ESC 27
 #define KEY_RETURN 10
 #define KEY_DELETE 127
+
+#define STYLE_ERROR 13
 
 typedef struct
 {
@@ -42,6 +45,15 @@ int max_y;
 char command[MAX_COMMAND_LEN];
 int command_len;
 bool command_entering = false;
+
+char error_text[MAX_ERROR_LEN];
+bool error_displayed = false;
+
+void set_error(const char* text)
+{
+    error_displayed = true;
+    strncpy(error_text, text, MAX_ERROR_LEN);
+}
 
 void setup_pane(pane* pane)
 {
@@ -232,9 +244,8 @@ void handle_write()
 
     if (!file)
     {
-        // TODO: better things
-        printf("Error opening file. File not found / permissions problem?\n");
-        exit(3);
+        set_error("Error opening file: path not found or permissions?");
+        return;
     }
 
     size_t bytes_written = 0;
@@ -247,9 +258,8 @@ void handle_write()
 
         if (written != size)
         {
-            // TODO: better things
-            printf("Encountered error while writing file; may be corrupt.\n");
-            exit(4);
+            set_error("Encountered error while writing file; may be corrupt.");
+            return;
         }
 
         bytes_written += written;
@@ -598,6 +608,18 @@ void render_details()
     box(w, 0, 0);
 }
 
+void render_error()
+{
+    if (!error_displayed)
+    {
+        return;
+    }
+
+    attron(COLOR_PAIR(STYLE_ERROR));
+    mvprintw(max_y - 1, 0, "%s", error_text);
+    attroff(COLOR_PAIR(STYLE_ERROR));
+}
+
 void place_cursor()
 {
     int render_cursor_x;
@@ -630,6 +652,8 @@ void flush_output()
 
 void update(int event)
 {
+    error_displayed = false;
+
     handle_sizing();
     handle_event(event);
     clamp_scrolling();
@@ -637,6 +661,7 @@ void update(int event)
     render_ascii();
     render_details();
     render_command();
+    render_error();
     place_cursor();
     flush_output();
 }
@@ -692,8 +717,12 @@ int main(int argc, char* argv[])
     open_file(argv[1]);
 
     initscr();
+    start_color();
     cbreak();
     keypad(stdscr, TRUE);
+
+    init_pair(STYLE_ERROR, COLOR_BLACK, COLOR_RED);
+
     refresh();
 
     update(-1);
