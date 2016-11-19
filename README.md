@@ -3,7 +3,7 @@ hexitor
 
 A terminal hex editor.
 
-!(https://s3.amazonaws.com/briansteffens/hexitor.png)
+![A screenshot](https://s3.amazonaws.com/briansteffens/hexitor.png)
 
 # Installation
 
