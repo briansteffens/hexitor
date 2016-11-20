@@ -427,6 +427,16 @@ void handle_key_down()
     }
 }
 
+void handle_previous_byte()
+{
+    cursor_byte--;
+}
+
+void handle_next_byte()
+{
+    cursor_byte++;
+}
+
 void handle_overwrite(int event)
 {
     // Convert A-F to lower case
@@ -497,6 +507,17 @@ void handle_event(int event)
         case 'J':
         case KEY_DOWN:
             handle_key_down();
+            break;
+
+
+        case 'q':
+        case 'Q':
+            handle_previous_byte();
+            break;
+
+        case 'w':
+        case 'W':
+            handle_next_byte();
             break;
 
         case KEY_PPAGE:

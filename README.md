@@ -38,6 +38,7 @@ hexitor <some_file>
 - Use the arrow keys or *hjkl* to move the cursor around the editor.
 - Page up and page down work as expected.
 - Type ```:123``` and hit enter to move to the 123rd byte in the file.
+- Use ```q``` and ```w``` to move back and forth one byte at a time.
 
 ### Editing bytes
 
