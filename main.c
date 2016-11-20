@@ -15,6 +15,7 @@
 #define KEY_DELETE 127
 
 #define STYLE_ERROR 13
+#define STYLE_CURSOR 14
 
 typedef struct
 {
@@ -584,7 +585,17 @@ void render_ascii()
             output = source[i];
         }
 
+        if (i == cursor_byte)
+        {
+            wattron(ascii_pane.window, COLOR_PAIR(STYLE_CURSOR));
+        }
+
         mvwprintw(ascii_pane.window, out_y, out_x, "%c", output);
+
+        if (i == cursor_byte)
+        {
+            wattroff(ascii_pane.window, COLOR_PAIR(STYLE_CURSOR));
+        }
     }
 }
 
@@ -722,6 +733,7 @@ int main(int argc, char* argv[])
     keypad(stdscr, TRUE);
 
     init_pair(STYLE_ERROR, COLOR_BLACK, COLOR_RED);
+    init_pair(STYLE_CURSOR, COLOR_BLACK, COLOR_WHITE);
 
     refresh();
 
