@@ -192,20 +192,9 @@ void handle_start_command()
     command_len = 1;
 }
 
-void unrender_command()
-{
-    move(max_y - 1, 0);
-
-    for (int i = 0; i < max_x; i++)
-    {
-        addch(' ');
-    }
-}
-
 void handle_cancel_command()
 {
     command_entering = false;
-    unrender_command();
 }
 
 void quit()
@@ -295,7 +284,6 @@ void handle_submit_command()
 {
     command[command_len] = 0;
     command_entering = false;
-    unrender_command();
 
     if (strncmp(command, ":q", MAX_COMMAND_LEN) == 0)
     {
