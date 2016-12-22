@@ -463,6 +463,12 @@ void handle_page_down()
     scroll_start += hex_pane.height;
 }
 
+void handle_end_of_buffer()
+{
+    cursor_byte = source_len - 1;
+    cursor_nibble = 1;
+}
+
 // Handle compound commands that start with g (ex: gg).
 // Returns true if the event was handled.
 bool handle_g_chord(int event)
@@ -540,6 +546,9 @@ void handle_event(int event)
             handle_next_byte();
             break;
 
+        case 'G':
+            handle_end_of_buffer();
+            break;
 
         case KEY_PPAGE:
             handle_page_up();

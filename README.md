@@ -40,6 +40,7 @@ hexitor <some_file>
 - Type ```:123``` and hit enter to move to the 123rd byte in the file.
 - Use ```q``` and ```w``` to move back and forth one byte at a time.
 - Use ```gg``` to move to the beginning of the buffer.
+- Use ```G``` to move to the end of the buffer.
 
 ### Editing bytes
 
