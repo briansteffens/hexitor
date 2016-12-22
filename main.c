@@ -463,11 +463,44 @@ void handle_page_down()
     scroll_start += hex_pane.height;
 }
 
+// Handle compound commands that start with g (ex: gg).
+// Returns true if the event was handled.
+bool handle_g_chord(int event)
+{
+    static bool g_pressed = false;
+
+    if (!g_pressed)
+    {
+        // If g was pressed, remember that for next key in the chord.
+        // Otherwise, don't consume the event.
+        g_pressed = event == 'g';
+        return g_pressed;
+    }
+
+    // Handle second key in the chord.
+    switch (event)
+    {
+        case 'g':
+            // Chord 'gg' - move to beginning of buffer
+            cursor_byte = 0;
+            cursor_nibble = 0;
+            break;
+    }
+
+    g_pressed = false;
+    return true;
+}
+
 void handle_event(int event)
 {
     if (command_entering)
     {
         handle_command_event(event);
+        return;
+    }
+
+    if (handle_g_chord(event))
+    {
         return;
     }
 
@@ -497,7 +530,6 @@ void handle_event(int event)
             handle_key_down();
             break;
 
-
         case 'q':
         case 'Q':
             handle_previous_byte();
@@ -507,6 +539,7 @@ void handle_event(int event)
         case 'W':
             handle_next_byte();
             break;
+
 
         case KEY_PPAGE:
             handle_page_up();
