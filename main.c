@@ -48,7 +48,10 @@ char command[MAX_COMMAND_LEN];
 int command_len;
 bool command_entering = false;
 
-unsigned char search_term[MAX_COMMAND_LEN / 3]; // 2 hex digits plus space
+// 2 hex digits plus space
+#define MAX_SEARCH_TERM_LEN MAX_COMMAND_LEN / 3
+unsigned char search_term[MAX_SEARCH_TERM_LEN];
+int search_term_len;
 
 char error_text[MAX_ERROR_LEN];
 bool error_displayed = false;
@@ -283,52 +286,136 @@ void handle_jump_offset()
     cursor_nibble = 0;
 }
 
-void set_search_term(const char* hex_ascii)
+bool is_hex_digit(char c)
 {
-    char* cur = hex_ascii;
-    int max = MAX_COMMAND_LEN;
+    return (c >= '0' && c <= '9') ||
+           (c >= 'a' && c <= 'f') ||
+           (c >= 'A' && c <= 'F');
+}
 
-    char byte[2];
+void set_search_term(char* hex_ascii, int len)
+{
+    int cur = 0;
+    search_term_len = 0;
 
-    while (cur && isspace(*cur))
+    while (true)
     {
-        cur++;
-    }
-
-    if (!cur)
-    {
-        set_error("Invalid search term");
-        return;
-    }
-
-    byte[0] = *(cur++);
-
-    if (!cur)
-    {
-        set_error("Invalid search term");
-        return;
-    }
-
-    byte[1] = *(cur++);
-
-    while (cur)
-    {
-        max--;
-        if (!max)
+        // Skip any whitespace
+        while (cur < len && isspace(hex_ascii[cur]))
         {
-            set_error("Invalid search term");
+            cur++;
+        }
+
+        if (cur >= len)
+        {
+            break;
+        }
+
+        unsigned char first = hex_ascii[cur++];
+        unsigned char second = hex_ascii[cur++];
+
+        if (!is_hex_digit(first) || !is_hex_digit(second))
+        {
+            search_term_len = 0;
+            set_error("Invalid search term format");
             return;
         }
 
-        
+        if (search_term_len >= MAX_SEARCH_TERM_LEN)
+        {
+            search_term_len = 0;
+            set_error("Search term storage overflow");
+            return;
+        }
 
-        cur++;
+        search_term[search_term_len++] = nibbles_to_byte(
+                hex_to_nibble(first), hex_to_nibble(second));
     }
 }
 
-void search_next()
+void handle_search_next()
 {
+    if (!search_term_len)
+    {
+        return;
+    }
 
+    int cur = cursor_byte + 1;
+
+    while (cur != cursor_byte)
+    {
+        if (cur + search_term_len >= source_len)
+        {
+            cur = 0;
+        }
+
+        bool match = true;
+
+        if (cur + search_term_len >= source_len)
+        {
+            continue;
+        }
+
+        for (int i = 0; i < search_term_len; i++)
+        {
+            if (source[cur + i] != search_term[i])
+            {
+                match = false;
+                break;
+            }
+        }
+
+        if (match)
+        {
+            cursor_byte = cur;
+            cursor_nibble = 0;
+            return;
+        }
+
+        cur++;
+    }
+
+    set_error("Search term not found");
+}
+
+void handle_search_previous()
+{
+    if (!search_term_len)
+    {
+        return;
+    }
+
+    int cur = cursor_byte - 1;
+
+    while (cur != cursor_byte)
+    {
+        if (cur < 0)
+        {
+            cur = source_len - search_term_len;
+        }
+
+        bool match = true;
+
+        for (int i = 0; i < search_term_len; i++)
+        {
+            if (source[cur + i] != search_term[i])
+            {
+                match = false;
+                break;
+            }
+        }
+
+        if (match)
+        {
+            cursor_byte = cur;
+            cursor_nibble = 0;
+            return;
+        }
+
+        cur--;
+    }
+
+    set_error("Search term not found");
 }
 
 void handle_submit_command()
@@ -338,9 +425,8 @@ void handle_submit_command()
 
     if (command[0] == '/')
     {
-        strncpy(search_term, &command[1], MAX_COMMAND_LEN);
-        set_search_term();
-        search_next();
+        set_search_term(&command[1], command_len - 1);
+        handle_search_next();
         return;
     }
 
@@ -620,6 +706,14 @@ void handle_event(int event)
         case ':':
         case '/':
             handle_start_command(event);
+            break;
+
+        case 'n':
+            handle_search_next();
+            break;
+
+        case 'N':
+            handle_search_previous();
             break;
 
         default:

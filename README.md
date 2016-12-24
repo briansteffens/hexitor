@@ -42,6 +42,14 @@ hexitor <some_file>
 - Use ```gg``` to move to the beginning of the buffer.
 - Use ```G``` to move to the end of the buffer.
 
+### Searching
+
+Type a forward-slash followed by a series of hex digits to search for that
+sequence of bytes in the buffer. For example, ```/05 0f``` would search for
+the bytes ```05 0f```. Use ```n``` to jump to the next occurrence of the
+search term and use ```N``` to jump to the previous occurrence of the search
+term.
+
 ### Editing bytes
 
 The keys 0-9 and a-f will overwrite the current nibble (half-byte).
