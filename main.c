@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <stdbool.h>
 #include <string.h>
+#include <ctype.h>
 #include <sys/stat.h>
 
 #include <ncurses.h>
@@ -46,6 +47,8 @@ int max_y;
 char command[MAX_COMMAND_LEN];
 int command_len;
 bool command_entering = false;
+
+unsigned char search_term[MAX_COMMAND_LEN / 3]; // 2 hex digits plus space
 
 char error_text[MAX_ERROR_LEN];
 bool error_displayed = false;
@@ -185,10 +188,10 @@ void handle_sizing()
     setup_pane(&detail_pane);
 }
 
-void handle_start_command()
+void handle_start_command(char first_char)
 {
     command_entering = true;
-    command[0] = ':';
+    command[0] = first_char;
     command_len = 1;
 }
 
@@ -280,10 +283,66 @@ void handle_jump_offset()
     cursor_nibble = 0;
 }
 
+void set_search_term(const char* hex_ascii)
+{
+    char* cur = hex_ascii;
+    int max = MAX_COMMAND_LEN;
+
+    char byte[2];
+
+    while (cur && isspace(*cur))
+    {
+        cur++;
+    }
+
+    if (!cur)
+    {
+        set_error("Invalid search term");
+        return;
+    }
+
+    byte[0] = *(cur++);
+
+    if (!cur)
+    {
+        set_error("Invalid search term");
+        return;
+    }
+
+    byte[1] = *(cur++);
+
+    while (cur)
+    {
+        max--;
+        if (!max)
+        {
+            set_error("Invalid search term");
+            return;
+        }
+
+        
+
+        cur++;
+    }
+}
+
+void search_next()
+{
+
+}
+
 void handle_submit_command()
 {
     command[command_len] = 0;
     command_entering = false;
+
+    if (command[0] == '/')
+    {
+        strncpy(search_term, &command[1], MAX_COMMAND_LEN);
+        set_search_term();
+        search_next();
+        return;
+    }
 
     if (strncmp(command, ":q", MAX_COMMAND_LEN) == 0)
     {
@@ -559,7 +618,8 @@ void handle_event(int event)
             break;
 
         case ':':
-            handle_start_command();
+        case '/':
+            handle_start_command(event);
             break;
 
         default:
