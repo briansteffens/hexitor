@@ -804,22 +804,65 @@ void render_ascii()
     }
 }
 
+// Turn something like "1234" to "1,234". str must have enough space to add
+// the commas (plus one for null termination): (len - 1) / 3 + 1
+void add_commas(char* str, int len)
+{
+    // Skip dash if negative integer
+    if (str[0] == '-')
+    {
+        str++;
+        len--;
+    }
+
+    int commas = (len - 1) / 3;
+
+    int source = len - 1;
+    int target = source + commas;
+
+    str[target + 1] = 0;
+
+    while (source >= 0)
+    {
+        int digits_processed = len - source - 1;
+
+        if (digits_processed && digits_processed % 3 == 0)
+        {
+            str[target--] = ',';
+        }
+
+        str[target--] = str[source--];
+    }
+}
+
+// Max value of uint64 with commas and null char
+#define MAX_RENDERED_INT 27
+
+#define render_int(y, x, label, cast, format) ({ \
+    char rendered_int[MAX_RENDERED_INT]; \
+    int len = snprintf(rendered_int, MAX_RENDERED_INT, format, \
+                       *(cast*)(source + cursor_byte)); \
+    add_commas(rendered_int, len); \
+    mvwprintw(detail_pane.window, y, x, "%s %s", label, \
+              rendered_int); \
+    }) \
+
 void render_details()
 {
     WINDOW* w = detail_pane.window;
     wclear(w);
 
-    unsigned char* cursor_start = source + cursor_byte;
-
     mvwprintw(w, 1, 1, "Offset: %d", cursor_byte);
-    mvwprintw(w, 2, 1, "Int8:   %d", *(int8_t*)cursor_start);
-    mvwprintw(w, 3, 1, "UInt8:  %d", *(uint8_t*)cursor_start);
-    mvwprintw(w, 4, 1, "Int16:  %d", *(int16_t*)cursor_start);
-    mvwprintw(w, 5, 1, "UInt16: %d", *(uint16_t*)cursor_start);
-    mvwprintw(w, 2, 30, "Int32:  %d", *(int32_t*)cursor_start);
-    mvwprintw(w, 3, 30, "UInt32: %d", *(uint32_t*)cursor_start);
-    mvwprintw(w, 4, 30, "Int64:  %ld", *(int64_t*)cursor_start);
-    mvwprintw(w, 5, 30, "UInt64: %ld", *(uint64_t*)cursor_start);
+
+    render_int(2, 1, "Int8:  ", int8_t, "%d");
+    render_int(3, 1, "UInt8: ", uint8_t, "%d");
+    render_int(4, 1, "Int16: ", int16_t, "%d");
+    render_int(5, 1, "UInt16:", uint16_t, "%d");
+
+    render_int(2, 30, "Int32: ", int32_t, "%d");
+    render_int(3, 30, "UInt32:", uint32_t, "%d");
+    render_int(4, 30, "Int64: ", int64_t, "%lld");
+    render_int(5, 30, "UInt64:", uint64_t, "%lld");
 
     box(w, 0, 0);
 }
