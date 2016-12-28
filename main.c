@@ -18,6 +18,8 @@
 #define STYLE_ERROR 13
 #define STYLE_CURSOR 14
 
+#define CHARS_PER_BYTE 3
+
 typedef struct
 {
     WINDOW* window;
@@ -27,9 +29,22 @@ typedef struct
     int height;
 } pane;
 
-pane hex_pane;
-pane ascii_pane;
-pane detail_pane;
+#define right(pane) (pane.left + pane.width)
+#define bottom(pane) (pane.top + pane.height)
+
+#define PANES_LEN 3
+
+#define PANE_HEX 0
+#define PANE_ASCII 1
+#define PANE_DETAIL 2
+
+pane panes[PANES_LEN];
+
+typedef struct
+{
+    int x;
+    int y;
+} point;
 
 unsigned char* source = NULL;
 int source_len;
@@ -115,7 +130,7 @@ unsigned char nibbles_to_byte(unsigned char n0, unsigned char n1)
 
 int bytes_per_line()
 {
-    return hex_pane.width / 3;
+    return panes[PANE_HEX].width / CHARS_PER_BYTE;
 }
 
 int byte_in_line(int byte_offset)
@@ -125,7 +140,7 @@ int byte_in_line(int byte_offset)
 
 int byte_in_column(int byte_offset)
 {
-    return byte_offset % bytes_per_line() * 3;
+    return byte_offset % bytes_per_line() * CHARS_PER_BYTE;
 }
 
 int first_byte_in_line(int line_index)
@@ -145,7 +160,7 @@ int first_visible_byte()
 
 int last_visible_line()
 {
-    return scroll_start + hex_pane.height - 1;
+    return scroll_start + panes[PANE_HEX].height - 1;
 }
 
 int last_visible_byte()
@@ -171,24 +186,24 @@ void handle_sizing()
     last_max_x = max_x;
     last_max_y = max_y;
 
-    detail_pane.height = 7;
+    panes[PANE_DETAIL].height = 7;
 
-    hex_pane.left = 1;
-    hex_pane.top = 0;
-    hex_pane.width = (max_x - 1) * 0.75;
-    hex_pane.height = max_y - detail_pane.height;
-    setup_pane(&hex_pane);
+    panes[PANE_HEX].left = 1;
+    panes[PANE_HEX].top = 0;
+    panes[PANE_HEX].width = (max_x - 1) * 0.75;
+    panes[PANE_HEX].height = max_y - panes[PANE_DETAIL].height;
+    setup_pane(&panes[PANE_HEX]);
 
-    ascii_pane.left = hex_pane.left + hex_pane.width;
-    ascii_pane.top = hex_pane.top;
-    ascii_pane.width = (max_x - 1) * 0.25;
-    ascii_pane.height = max_y - detail_pane.height;
-    setup_pane(&ascii_pane);
+    panes[PANE_ASCII].left = panes[PANE_HEX].left + panes[PANE_HEX].width;
+    panes[PANE_ASCII].top = panes[PANE_HEX].top;
+    panes[PANE_ASCII].width = (max_x - 1) * 0.25;
+    panes[PANE_ASCII].height = max_y - panes[PANE_DETAIL].height;
+    setup_pane(&panes[PANE_ASCII]);
 
-    detail_pane.left = 0;
-    detail_pane.top = max_y - detail_pane.height;
-    detail_pane.width = max_x;
-    setup_pane(&detail_pane);
+    panes[PANE_DETAIL].left = 0;
+    panes[PANE_DETAIL].top = max_y - panes[PANE_DETAIL].height;
+    panes[PANE_DETAIL].width = max_x;
+    setup_pane(&panes[PANE_DETAIL]);
 }
 
 void handle_start_command(char first_char)
@@ -599,13 +614,13 @@ void handle_overwrite(int event)
 
 void handle_page_up()
 {
-    cursor_byte -= hex_pane.height * bytes_per_line();
+    cursor_byte -= panes[PANE_HEX].height * bytes_per_line();
 }
 
 void handle_page_down()
 {
-    cursor_byte += hex_pane.height * bytes_per_line();
-    scroll_start += hex_pane.height;
+    cursor_byte += panes[PANE_HEX].height * bytes_per_line();
+    scroll_start += panes[PANE_HEX].height;
 }
 
 void handle_end_of_buffer()
@@ -640,6 +655,74 @@ bool handle_g_chord(int event)
 
     g_pressed = false;
     return true;
+}
+
+// Given an x,y location, find the pane at that position.
+// Return -1 if there is no pane at that position.
+int get_pane_under_coords(int x, int y)
+{
+    for (int pane = 0; pane < PANES_LEN; pane++)
+    {
+        if (x >= panes[pane].left && x <= right(panes[pane]) &&
+            y >= panes[pane].top && y <= bottom(panes[pane]))
+        {
+            return pane;
+        }
+    }
+
+    return -1;
+}
+
+// Convert screen-space coords to pane-space coords
+point screen_to_pane(pane* pane, int x, int y)
+{
+    point ret;
+
+    ret.x = x - pane->left;
+    ret.y = y - pane->top;
+
+    return ret;
+}
+
+void handle_mouse_pressed(MEVENT mouse_event)
+{
+    int pane = get_pane_under_coords(mouse_event.x, mouse_event.y);
+
+    if (pane != PANE_HEX && pane != PANE_ASCII)
+    {
+        return;
+    }
+
+    point coords = screen_to_pane(&panes[pane], mouse_event.x, mouse_event.y);
+
+    if (pane == PANE_HEX)
+    {
+        if (coords.x >= bytes_per_line() * CHARS_PER_BYTE - 1)
+        {
+            return;
+        }
+
+        cursor_byte = first_byte_in_line(coords.y + scroll_start) +
+                      coords.x / CHARS_PER_BYTE;
+
+        cursor_nibble = coords.x % CHARS_PER_BYTE;
+
+        if (cursor_nibble == 2)
+        {
+            cursor_byte++;
+            cursor_nibble = 0;
+        }
+    }
+    else if (pane == PANE_ASCII)
+    {
+        if (coords.x >= bytes_per_line())
+        {
+            return;
+        }
+
+        cursor_byte = first_byte_in_line(coords.y + scroll_start) + coords.x;
+        cursor_nibble = 0;
+    }
 }
 
 void handle_event(int event)
@@ -720,6 +803,16 @@ void handle_event(int event)
             handle_overwrite(event);
             break;
     }
+
+    MEVENT mouse_event;
+    if (getmouse(&mouse_event) == OK)
+    {
+        if (mouse_event.bstate & BUTTON1_PRESSED)
+        {
+            handle_mouse_pressed(mouse_event);
+            return;
+        }
+    }
 }
 
 void clamp_scrolling()
@@ -759,7 +852,7 @@ void clamp_scrolling()
 
 void render_hex()
 {
-    wclear(hex_pane.window);
+    wclear(panes[PANE_HEX].window);
 
     char hex[2];
 
@@ -770,13 +863,14 @@ void render_hex()
         int out_y = byte_in_line(i) - scroll_start;
         int out_x = byte_in_column(i);
 
-        mvwprintw(hex_pane.window, out_y, out_x, "%c%c ", hex[0], hex[1]);
+        mvwprintw(panes[PANE_HEX].window, out_y, out_x, "%c%c ", hex[0],
+                  hex[1]);
     }
 }
 
 void render_ascii()
 {
-    wclear(ascii_pane.window);
+    wclear(panes[PANE_ASCII].window);
 
     for (int i = first_visible_byte(); i <= last_visible_byte(); i++)
     {
@@ -792,14 +886,14 @@ void render_ascii()
 
         if (i == cursor_byte)
         {
-            wattron(ascii_pane.window, COLOR_PAIR(STYLE_CURSOR));
+            wattron(panes[PANE_ASCII].window, COLOR_PAIR(STYLE_CURSOR));
         }
 
-        mvwprintw(ascii_pane.window, out_y, out_x, "%c", output);
+        mvwprintw(panes[PANE_ASCII].window, out_y, out_x, "%c", output);
 
         if (i == cursor_byte)
         {
-            wattroff(ascii_pane.window, COLOR_PAIR(STYLE_CURSOR));
+            wattroff(panes[PANE_ASCII].window, COLOR_PAIR(STYLE_CURSOR));
         }
     }
 }
@@ -843,13 +937,13 @@ void add_commas(char* str, int len)
     int len = snprintf(rendered_int, MAX_RENDERED_INT, format, \
                        *(cast*)(source + cursor_byte)); \
     add_commas(rendered_int, len); \
-    mvwprintw(detail_pane.window, y, x, "%s %s", label, \
+    mvwprintw(panes[PANE_DETAIL].window, y, x, "%s %s", label, \
               rendered_int); \
     }) \
 
 void render_details()
 {
-    WINDOW* w = detail_pane.window;
+    WINDOW* w = panes[PANE_DETAIL].window;
     wclear(w);
 
     mvwprintw(w, 1, 1, "Offset: %d", cursor_byte);
@@ -861,8 +955,8 @@ void render_details()
 
     render_int(2, 30, "Int32: ", int32_t, "%d");
     render_int(3, 30, "UInt32:", uint32_t, "%d");
-    render_int(4, 30, "Int64: ", int64_t, "%lld");
-    render_int(5, 30, "UInt64:", uint64_t, "%lld");
+    render_int(4, 30, "Int64: ", int64_t, "%ld");
+    render_int(5, 30, "UInt64:", uint64_t, "%ld");
 
     box(w, 0, 0);
 }
@@ -891,9 +985,9 @@ void place_cursor()
     }
     else
     {
-        render_cursor_x = hex_pane.left + byte_in_column(cursor_byte) +
+        render_cursor_x = panes[PANE_HEX].left + byte_in_column(cursor_byte) +
                           cursor_nibble;
-        render_cursor_y = hex_pane.top + byte_in_line(cursor_byte) -
+        render_cursor_y = panes[PANE_HEX].top + byte_in_line(cursor_byte) -
                           scroll_start;
     }
 
@@ -902,9 +996,9 @@ void place_cursor()
 
 void flush_output()
 {
-    wnoutrefresh(hex_pane.window);
-    wnoutrefresh(ascii_pane.window);
-    wnoutrefresh(detail_pane.window);
+    wnoutrefresh(panes[PANE_HEX].window);
+    wnoutrefresh(panes[PANE_ASCII].window);
+    wnoutrefresh(panes[PANE_DETAIL].window);
 
     doupdate();
 }
@@ -979,6 +1073,9 @@ int main(int argc, char* argv[])
     start_color();
     cbreak();
     keypad(stdscr, TRUE);
+
+    mouseinterval(0);
+    mousemask(ALL_MOUSE_EVENTS, NULL);
 
     init_pair(STYLE_ERROR, COLOR_BLACK, COLOR_RED);
     init_pair(STYLE_CURSOR, COLOR_BLACK, COLOR_WHITE);
