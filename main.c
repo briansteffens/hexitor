@@ -3,6 +3,7 @@
 #include <stdbool.h>
 #include <string.h>
 #include <ctype.h>
+#include <time.h>
 #include <sys/stat.h>
 
 #include <ncurses.h>
@@ -19,6 +20,8 @@
 #define STYLE_CURSOR 14
 
 #define CHARS_PER_BYTE 3
+
+#define ESCAPE_SEQUENCE_MAX_TIME_MS 50
 
 typedef struct
 {
@@ -725,6 +728,85 @@ void handle_mouse_pressed(MEVENT mouse_event)
     }
 }
 
+void handle_key_home()
+{
+    cursor_byte = first_byte_in_line(byte_in_line(cursor_byte));
+    cursor_nibble = 0;
+}
+
+void handle_key_end()
+{
+    cursor_byte = last_byte_in_line(byte_in_line(cursor_byte));
+    cursor_nibble = 1;
+}
+
+// Calculate the milliseconds elapsed between start and end
+unsigned ms_taken(struct timespec start, struct timespec end)
+{
+    return ((end.tv_sec - start.tv_sec) * 1000) +
+           ((end.tv_nsec - start.tv_nsec) / 1000000);
+}
+
+bool handle_escape_sequence(int event)
+{
+    #define FULL_SEQUENCE_LEN 4
+
+    static char sequence[FULL_SEQUENCE_LEN];
+    static int sequence_len = 0;
+
+    static struct timespec start;
+    static struct timespec end;
+
+    // Sequence must start with an escape key. If sequence is unstarted then
+    // the only valid key is the escape key.
+    if (!sequence_len && event != KEY_ESC)
+    {
+        return false;
+    }
+
+    // Start the timer on the first key of the sequence.
+    if (!sequence_len)
+    {
+        clock_gettime(CLOCK_REALTIME, &start);
+    }
+    // Check the timer on subsequent keys of the sequence.
+    else
+    {
+        clock_gettime(CLOCK_REALTIME, &end);
+
+        // Reset the sequence and don't consume the keypress if the sequence
+        // has taken too long to complete.
+        if (ms_taken(start, end) > ESCAPE_SEQUENCE_MAX_TIME_MS)
+        {
+            sequence_len = 0;
+            return false;
+        }
+    }
+
+    sequence[sequence_len++] = event;
+
+    // Sequence is not yet complete
+    if (sequence_len != FULL_SEQUENCE_LEN)
+    {
+        return true;
+    }
+
+    // Handle sequence and reset
+    switch (sequence[2])
+    {
+        case 49:
+            handle_key_home();
+            break;
+
+        case 52:
+            handle_key_end();
+            break;
+    }
+
+    sequence_len = 0;
+    return true;
+}
+
 void handle_event(int event)
 {
     if (command_entering)
@@ -734,6 +816,11 @@ void handle_event(int event)
     }
 
     if (handle_g_chord(event))
+    {
+        return;
+    }
+
+    if (handle_escape_sequence(event))
     {
         return;
     }
