@@ -1016,6 +1016,23 @@ void add_commas(char* str, int len)
     }
 }
 
+void byte_to_binary_string(unsigned char src, char* output)
+{
+    char* out = output + 8;
+    *out = 0;
+
+    while (src != 0)
+    {
+        *--out = src & 1 ? '1' : '0';
+        src >>= 1;
+    }
+
+    while (output != out)
+    {
+        *--out = '0';
+    }
+}
+
 // Max value of uint64 with commas and null char
 #define MAX_RENDERED_INT 27
 
@@ -1034,6 +1051,10 @@ void render_details()
     wclear(w);
 
     mvwprintw(w, 1, 1, "Offset: %d", cursor_byte);
+
+    char binary[9];
+    byte_to_binary_string(*(int8_t*)(source + cursor_byte), binary);
+    mvwprintw(w, 1, 30, "Binary: %s", binary);
 
     render_int(2, 1, "Int8:  ", int8_t, "%d");
     render_int(3, 1, "UInt8: ", uint8_t, "%d");
