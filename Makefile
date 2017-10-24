@@ -1,7 +1,7 @@
 default: build
 
 build:
-	gcc -Wall main.c -lncurses
+	gcc -Wall main.c -lncurses -ltinfo
 
 install:
 	mkdir -p ${DESTDIR}/usr/bin
