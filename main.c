@@ -1178,6 +1178,7 @@ int main(int argc, char* argv[])
     open_file(argv[1]);
 
     initscr();
+    use_default_colors();
     start_color();
     cbreak();
     keypad(stdscr, TRUE);
