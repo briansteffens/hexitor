@@ -14,7 +14,6 @@
 
 #define KEY_ESC 27
 #define KEY_RETURN 10
-#define KEY_DELETE 127
 
 #define STYLE_ERROR 13
 #define STYLE_CURSOR 14
@@ -50,17 +49,17 @@ typedef struct
 } point;
 
 unsigned char* source = NULL;
-int source_len;
+long unsigned int source_len;
 
 char* original_filename;
 
-int cursor_byte = 0;
+long unsigned int cursor_byte = 0;
 int cursor_nibble = 0;
 
-int scroll_start = 0;
+long int scroll_start = 0;
 
-int max_x;
-int max_y;
+long int max_x;
+long int max_y;
 
 char command[MAX_COMMAND_LEN];
 int command_len;
@@ -136,39 +135,39 @@ int bytes_per_line()
     return panes[PANE_HEX].width / CHARS_PER_BYTE;
 }
 
-int byte_in_line(int byte_offset)
+long unsigned int byte_in_line(long unsigned int byte_offset)
 {
     return byte_offset / bytes_per_line();
 }
 
-int byte_in_column(int byte_offset)
+long unsigned int byte_in_column(long unsigned int byte_offset)
 {
     return byte_offset % bytes_per_line() * CHARS_PER_BYTE;
 }
 
-int first_byte_in_line(int line_index)
+long unsigned int first_byte_in_line(long unsigned int line_index)
 {
     return line_index * bytes_per_line();
 }
 
-int last_byte_in_line(int line_index)
+long unsigned int last_byte_in_line(long unsigned int line_index)
 {
     return first_byte_in_line(line_index + 1) - 1;
 }
 
-int first_visible_byte()
+long unsigned int first_visible_byte()
 {
     return first_byte_in_line(scroll_start);
 }
 
-int last_visible_line()
+long unsigned int last_visible_line()
 {
     return scroll_start + panes[PANE_HEX].height - 1;
 }
 
-int last_visible_byte()
+long unsigned int last_visible_byte()
 {
-    int ret = last_byte_in_line(last_visible_line());
+    long unsigned int ret = last_byte_in_line(last_visible_line());
 
     return ret < source_len ? ret : source_len - 1;
 }
@@ -300,7 +299,9 @@ void handle_jump_offset()
     }
 
     // Move cursor to requested offset
-    cursor_byte = atoi(command + 1);
+    cursor_byte = atol(command + 1);
+    if (cursor_byte>=source_len)
+        cursor_byte = source_len - 1;
     cursor_nibble = 0;
 }
 
@@ -358,21 +359,19 @@ void handle_search_next()
         return;
     }
 
-    int cur = cursor_byte + 1;
+    long unsigned int cur;
+    if ((cursor_byte + search_term_len) < source_len)
+    {
+        cur = cursor_byte + 1;
+    }
+    else
+    {
+        cur = 0;
+    }
 
     while (cur != cursor_byte)
     {
-        if (cur + search_term_len >= source_len)
-        {
-            cur = 0;
-        }
-
         bool match = true;
-
-        if (cur + search_term_len >= source_len)
-        {
-            continue;
-        }
 
         for (int i = 0; i < search_term_len; i++)
         {
@@ -390,7 +389,18 @@ void handle_search_next()
             return;
         }
 
-        cur++;
+        if ( (cur + search_term_len) < source_len)
+        {
+            cur++;
+        }
+        else
+        {
+            if (cursor_byte > cur)
+            {
+                break;
+            }
+            cur = 0;
+        }
     }
 
     set_error("Search term not found");
@@ -403,15 +413,25 @@ void handle_search_previous()
         return;
     }
 
-    int cur = cursor_byte - 1;
-
-    while (cur != cursor_byte)
+    long unsigned int cur;
+    if (cursor_byte)
     {
-        if (cur < 0)
+        if ((cursor_byte + search_term_len - 2) < source_len)
+        {
+            cur = cursor_byte - 1;
+        }
+        else
         {
             cur = source_len - search_term_len;
         }
+    }
+    else
+    {
+        cur = source_len - search_term_len;
+    }
 
+    while (cur != cursor_byte)
+    {
         bool match = true;
 
         for (int i = 0; i < search_term_len; i++)
@@ -430,7 +450,18 @@ void handle_search_previous()
             return;
         }
 
-        cur--;
+        if (cur)
+        {
+            cur--;
+        }
+        else
+        {
+            cur = source_len - search_term_len;
+            if (cursor_byte>cur)
+            {
+                break;
+            }
+        }
     }
 
     set_error("Search term not found");
@@ -493,10 +524,11 @@ void handle_command_event(int event)
 {
     switch (event)
     {
-        case KEY_ESC:    handle_cancel_command();      break;
-        case KEY_RETURN: handle_submit_command();      break;
-        case KEY_DELETE: handle_backspace_command();   break;
-        default:         handle_add_to_command(event); break;
+        
+        case KEY_ESC:       handle_cancel_command();      break;
+        case KEY_RETURN:    handle_submit_command();      break;
+        case KEY_BACKSPACE: handle_backspace_command();   break;
+        default:            handle_add_to_command(event); break;
     }
 }
 
@@ -540,8 +572,11 @@ void handle_key_left()
     }
     else
     {
-        cursor_nibble = 1;
-        cursor_byte--;
+        if(cursor_byte)
+        {
+            cursor_byte--;
+            cursor_nibble = 1;
+        }
     }
 }
 
@@ -553,39 +588,40 @@ void handle_key_right()
     }
     else
     {
-        cursor_nibble = 0;
-        cursor_byte++;
+        if((cursor_byte+1) < source_len)
+        {
+            cursor_byte++;
+            cursor_nibble = 0;
+        }
     }
 }
 
 void handle_key_up()
 {
-    int temp = cursor_byte - bytes_per_line();
+    unsigned int temp = bytes_per_line();
 
-    if (temp >= 0)
-    {
-        cursor_byte = temp;
-    }
+    if (cursor_byte >= temp)
+        cursor_byte -= temp;
 }
 
 void handle_key_down()
 {
-    int temp = cursor_byte + bytes_per_line();
+    unsigned int temp = bytes_per_line();
 
-    if (temp < source_len)
-    {
-        cursor_byte = temp;
-    }
+    if (cursor_byte+temp < source_len)
+        cursor_byte += temp;
 }
 
 void handle_previous_byte()
 {
-    cursor_byte--;
+    if(cursor_byte)
+        cursor_byte--;
 }
 
 void handle_next_byte()
 {
-    cursor_byte++;
+    if((cursor_byte+1) < source_len)
+        cursor_byte++;
 }
 
 void handle_overwrite(int event)
@@ -617,13 +653,26 @@ void handle_overwrite(int event)
 
 void handle_page_up()
 {
-    cursor_byte -= panes[PANE_HEX].height * bytes_per_line();
+    unsigned int temp = panes[PANE_HEX].height * bytes_per_line();
+    if (cursor_byte > temp)
+        cursor_byte -= temp;
+    else
+        cursor_byte = 0;
 }
 
 void handle_page_down()
 {
-    cursor_byte += panes[PANE_HEX].height * bytes_per_line();
-    scroll_start += panes[PANE_HEX].height;
+    unsigned int temp = panes[PANE_HEX].height * bytes_per_line();
+
+    if (cursor_byte + temp <source_len)
+    {
+        cursor_byte += temp;
+        scroll_start += panes[PANE_HEX].height;
+    }
+    else
+    {
+        cursor_byte = source_len - 1;
+    }
 }
 
 void handle_end_of_buffer()
@@ -886,6 +935,14 @@ void handle_event(int event)
             handle_search_previous();
             break;
 
+        case KEY_HOME:
+            handle_key_home();
+            break;
+
+        case KEY_END:
+            handle_key_end();
+            break;
+
         default:
             handle_overwrite(event);
             break;
@@ -943,12 +1000,12 @@ void render_hex()
 
     char hex[2];
 
-    for (int i = first_visible_byte(); i <= last_visible_byte(); i++)
+    for (long int i = first_visible_byte(); i <= last_visible_byte(); i++)
     {
         byte_to_hex(source[i], hex);
 
-        int out_y = byte_in_line(i) - scroll_start;
-        int out_x = byte_in_column(i);
+        long int out_y = byte_in_line(i) - scroll_start;
+        long int out_x = byte_in_column(i);
 
         mvwprintw(panes[PANE_HEX].window, out_y, out_x, "%c%c ", hex[0],
                   hex[1]);
@@ -959,7 +1016,7 @@ void render_ascii()
 {
     wclear(panes[PANE_ASCII].window);
 
-    for (int i = first_visible_byte(); i <= last_visible_byte(); i++)
+    for (long int i = first_visible_byte(); i <= last_visible_byte(); i++)
     {
         int out_y = byte_in_line(i) - scroll_start;
         int out_x = i % bytes_per_line();
@@ -1050,7 +1107,7 @@ void render_details()
     WINDOW* w = panes[PANE_DETAIL].window;
     wclear(w);
 
-    mvwprintw(w, 1, 1, "Offset: %d", cursor_byte);
+    mvwprintw(w, 1, 1, "Offset: %ld", cursor_byte);
 
     char binary[9];
     byte_to_binary_string(*(int8_t*)(source + cursor_byte), binary);
@@ -1083,8 +1140,8 @@ void render_error()
 
 void place_cursor()
 {
-    int render_cursor_x;
-    int render_cursor_y;
+    long int render_cursor_x;
+    long int render_cursor_y;
 
     if (command_entering)
     {
@@ -1133,7 +1190,7 @@ void open_file(char* filename)
     struct stat st;
     stat(filename, &st);
     source_len = st.st_size;
-    int count = st.st_size * sizeof(unsigned char);
+    long unsigned int count = st.st_size * sizeof(unsigned char);
 
     // Allocate or reallocate memory
     if (source == NULL)
@@ -1143,6 +1200,12 @@ void open_file(char* filename)
     else
     {
         source = realloc(source, count);
+    }
+
+    if (source == NULL)
+    {
+        printf("Error allocating memory. Free memory and try again.\n");
+        exit(2);
     }
 
     // Read file into memory
