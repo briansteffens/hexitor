@@ -1,14 +1,18 @@
+DESTDIR?=/usr/bin
+LDIR?=/usr
+
 default: build
 
 build:
-	gcc -Wall main.c -lncurses -ltinfo
+	gcc -Wall -I$(LDIR)/include -I$(LDIR)/include/ncurses main.c -o hexitor.o -L$(LDIR)/lib -lncurses -ltinfo 
 
 install:
-	mkdir -p ${DESTDIR}/usr/bin
-	cp a.out ${DESTDIR}/usr/bin/hexitor
+	@echo "Installing in ${DESTDIR}"
+	mkdir -p ${DESTDIR}
+	cp hexitor.o ${DESTDIR}/hexitor
 
 uninstall:
-	rm ${DESTDIR}/usr/bin/hexitor
+	rm ${DESTDIR}/hexitor
 
 clean:
-	rm -f a.out
+	rm -f hexitor.o
