@@ -25,6 +25,35 @@ To uninstall:
 sudo make uninstall
 ```
 
+# Installation without root
+
+If you don't have root access and there is not libncurses installed,
+first install ncurses
+
+```bash
+wget https://invisible-mirror.net/archives/ncurses/ncurses-6.2.tar.gz
+tar -xzf ncurses-6.2.tar.gz
+cd ncurses-6.2
+./configure --prefix=$HOME/ncurses
+make
+make install
+cd ..
+rm -rf ncurses-6.2*
+```
+
+Then compile and install hexitor
+
+```bash
+make LDIR=$HOME/ncurses
+make DESTDIR=$HOME/bin install
+```
+
+to uninstall
+
+```bash
+make DESTDIR=$HOME/bin uninstall
+```
+
 # Usage
 
 ### Opening a file
